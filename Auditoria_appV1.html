@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Cumplimiento | Auditoría Multi-Estándar</title>
+    <!-- Tailwind + Fuentes -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #f3f4f6; }
+        .status-badge {
+            @apply px-3 py-1 text-xs font-semibold rounded-full cursor-pointer hover:shadow-md transition-all;
+        }
+        .status-activo { background-color: #10b981; color: white; }
+        .status-parcial { background-color: #f59e0b; color: white; }
+        .status-pendiente { background-color: #ef4444; color: white; }
+        .tab-active {
+            border-bottom: 3px solid #006341;
+            font-weight: 700;
+        }
+        /* Estilo para el modal flotante */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 50;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(3px);
+        }
+    </style>
+</head>
+<body class="p-6 md:p-8">
+
+    <!-- Modal para Agregar/Editar Control -->
+    <div id="modalForm" class="modal">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md mx-auto mt-20 p-6">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">➕ Agregar Nuevo Control</h2>
+            <form id="form-control" onsubmit="guardarNuevoControl(event)">
+                <div class="mb-3">
+                    <label class="block text-sm font-medium text-gray-700">Estándar</label>
+                    <select id="new-estandar" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" required>
+                        <option value="ISO 27001">ISO 27001</option>
+                        <option value="NIST CSF">NIST CSF</option>
+                        <option value="PCI DSS">PCI DSS</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm font-medium text-gray-700">ID Control</label>
+                    <input type="text" id="new-id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Ej: A.8.1" required>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm font-medium text-gray-700">Nombre del Control</label>
+                    <input type="text" id="new-nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Ej: Gestión de Activos" required>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm font-medium text-gray-700">Owner</label>
+                    <input type="text" id="new-owner" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Ej: CISO" required>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm font-medium text-gray-700">Estatus</label>
+                    <select id="new-estatus" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" required>
+                        <option value="Activo">Activo</option>
+                        <option value="Parcial">Parcial</option>
+                        <option value="Pendiente">Pendiente</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">Evidencia</label>
+                    <input type="text" id="new-evidencia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Nombre archivo o N/A">
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="cerrarModal()" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Contenedor Principal -->
+    <div class="max-w-7xl mx-auto">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-3">
+                    📋 Tablero de Auditoría
+                    <span class="text-sm bg-gray-200 px-3 py-1 rounded-full text-gray-600 font-normal">v. Ordenado</span>
+                </h1>
+                <p class="text-gray-500 mt-1">ISO 27001 · NIST CSF · PCI DSS | <span class="text-green-700 font-medium">💾 Datos guardados en tu navegador</span></p>
+            </div>
+            <div class="text-right">
+                <div class="text-2xl font-bold text-gray-700" id="fecha-actual"></div>
+                <div class="text-sm text-gray-400">🇲🇽 Ciudad de México</div>
+            </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-gray-500">
+                <p class="text-gray-500 text-sm">Total Controles</p>
+                <p class="text-3xl font-bold" id="total-controles">0</p>
+            </div>
+            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-green-600">
+                <p class="text-gray-500 text-sm">Controles Activos</p>
+                <p class="text-3xl font-bold text-green-600" id="total-activos">0</p>
+            </div>
+            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-yellow-500">
+                <p class="text-gray-500 text-sm">Parciales / En Curso</p>
+                <p class="text-3xl font-bold text-yellow-600" id="total-parciales">0</p>
+            </div>
+            <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-red-600">
+                <p class="text-gray-500 text-sm">Pendientes / Críticos</p>
+                <p class="text-3xl font-bold text-red-600" id="total-pendientes">0</p>
+            </div>
+        </div>
+
+        <!-- Panel de Control (MEJORADO) -->
+        <div class="bg-white p-4 rounded-xl shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                <button onclick="filtrarEstandar('TODOS')" id="tab-todos" class="px-6 py-2 rounded-md text-sm font-medium transition-all tab-active bg-white shadow-sm">Todos</button>
+                <button onclick="filtrarEstandar('ISO 27001')" id="tab-iso" class="px-6 py-2 rounded-md text-sm font-medium transition-all hover:bg-gray-200">ISO 27001</button>
+                <button onclick="filtrarEstandar('NIST CSF')" id="tab-nist" class="px-6 py-2 rounded-md text-sm font-medium transition-all hover:bg-gray-200">NIST CSF</button>
+                <button onclick="filtrarEstandar('PCI DSS')" id="tab-pci" class="px-6 py-2 rounded-md text-sm font-medium transition-all hover:bg-gray-200">PCI DSS</button>
+            </div>
+
+            <!-- BOTONES DE GESTIÓN MANUAL -->
+            <div class="flex gap-2">
+                <button onclick="abrirModalAgregar()" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium shadow-md transition flex items-center gap-2">
+                    <span class="text-lg">➕</span> Agregar Control Manual
+                </button>
+                <button onclick="exportarCSV()" class="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition flex items-center gap-2">
+                    ⬇️ Exportar CSV
+                </button>
+                <button onclick="reiniciarDemo()" class="bg-gray-100 border border-gray-300 hover:bg-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2" title="Volver a los datos de ejemplo">
+                    🔄 Reiniciar Demo
+                </button>
+            </div>
+        </div>
+
+        <!-- Tabla de Controles -->
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estándar</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Control</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre del Control</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Owner</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estatus</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Evidencia</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200" id="tabla-body">
+                        <!-- JS Inyecta aquí -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="bg-gray-50 px-6 py-3 text-sm text-gray-500 border-t flex justify-between">
+                <span>💡 Tip: Edita estatus/owner dando clic. <strong class="text-green-700">Se ordena automáticamente A.5.1, A.5.2...</strong></span>
+                <span class="text-gray-400">🗑️ Para eliminar, usa el botón rojo.</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================================================
+        // 1. CONFIGURACIÓN INICIAL Y LOCALSTORAGE
+        // ==========================================================================
+        const STORAGE_KEY = 'auditoria_dashboard_data';
+        
+        // Datos semilla (Demo inicial)
+        const datosDemo = [
+            { estandar: "ISO 27001", id: "A.5.1", nombre: "Políticas de Seguridad", owner: "CISO", estatus: "Activo", evidencia: "doc_politica_v2.pdf" },
+            { estandar: "ISO 27001", id: "A.5.2", nombre: "Funciones y Responsabilidades", owner: "CISO", estatus: "Parcial", evidencia: "borrador_matriz.pdf" },
+            { estandar: "ISO 27001", id: "A.8.1", nombre: "Inventario de Activos", owner: "TI", estatus: "Pendiente", evidencia: "Pendiente" },
+            { estandar: "NIST CSF", id: "ID.AM-1", nombre: "Inventario de Dispositivos", owner: "Infra", estatus: "Activo", evidencia: "inv_hardware.xlsx" },
+            { estandar: "NIST CSF", id: "PR.AC-1", nombre: "Gestión de Identidades", owner: "IAM Team", estatus: "Parcial", evidencia: "azure_ad_report.pdf" },
+            { estandar: "NIST CSF", id: "DE.CM-1", nombre: "Monitoreo de Red", owner: "SOC", estatus: "Pendiente", evidencia: "falta_agente" },
+            { estandar: "PCI DSS", id: "Req 2.1", nombre: "Configuraciones Seguras", owner: "SysAdmin", estatus: "Activo", evidencia: "cis_benchmark.txt" },
+            { estandar: "PCI DSS", id: "Req 2.2", nombre: "Seguridad en Servicios", owner: "DevOps", estatus: "Parcial", evidencia: "docker_scan.log" },
+            { estandar: "PCI DSS", id: "Req 6.1", nombre: "Gestión de Parches", owner: "Seguridad", estatus: "Pendiente", evidencia: "reporte_nessus.pdf" }
+        ];
+
+        // Cargar datos desde LocalStorage o usar Demo
+        let datosControles = [];
+        function cargarDatos() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    datosControles = JSON.parse(stored);
+                } catch(e) {
+                    datosControles = [...datosDemo];
+                }
+            } else {
+                datosControles = [...datosDemo];
+                guardarEnStorage(); // Guardar demo inicial
+            }
+        }
+        
+        function guardarEnStorage() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(datosControles));
+        }
+
+        let filtroActual = 'TODOS';
+        cargarDatos(); // Inicializar
+
+        // ==========================================================================
+        // 2. FUNCIONES DE RENDERIZADO (KPIs Y TABLA) - CON ORDENAMIENTO NATURAL
+        // ==========================================================================
+        function renderizarDashboard() {
+            const tbody = document.getElementById('tabla-body');
+            const filtrados = filtroActual === 'TODOS' 
+                ? datosControles 
+                : datosControles.filter(c => c.estandar === filtroActual);
+            
+            tbody.innerHTML = '';
+            
+            let activos = 0, parciales = 0, pendientes = 0;
+            datosControles.forEach(c => {
+                if (c.estatus === 'Activo') activos++;
+                else if (c.estatus === 'Parcial') parciales++;
+                else if (c.estatus === 'Pendiente') pendientes++;
+            });
+
+            document.getElementById('total-controles').innerText = datosControles.length;
+            document.getElementById('total-activos').innerText = activos;
+            document.getElementById('total-parciales').innerText = parciales;
+            document.getElementById('total-pendientes').innerText = pendientes;
+
+            // 🔥 ORDENAMIENTO INTELIGENTE (La mejora que pediste)
+            const filtradosOrdenados = [...filtrados].sort((a, b) => {
+                // 1. Agrupar por Estándar
+                if (a.estandar < b.estandar) return -1;
+                if (a.estandar > b.estandar) return 1;
+                
+                // 2. Orden natural por ID (A.5.1, A.5.2, A.5.10...)
+                return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });
+            });
+
+            filtradosOrdenados.forEach((control) => {
+                const indiceReal = datosControles.findIndex(c => 
+                    c.id === control.id && c.estandar === control.estandar
+                );
+                
+                const fila = document.createElement('tr');
+                fila.className = 'hover:bg-gray-50 transition-colors';
+                if (control.estatus === 'Activo') fila.classList.add('bg-green-50/30');
+                else if (control.estatus === 'Pendiente') fila.classList.add('bg-red-50/30');
+                
+                fila.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${control.estandar}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">${control.id}</td>
+                    <td class="px-6 py-4 text-sm text-gray-700 max-w-md">${control.nombre}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        <span class="cursor-pointer border-b border-dashed border-gray-400 hover:border-blue-500" 
+                              onclick="editarCelda(${indiceReal}, 'owner', '${control.owner.replace(/'/g, "\\'")}')">
+                            ${control.owner}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="status-badge ${getStatusClass(control.estatus)}" 
+                              onclick="editarCelda(${indiceReal}, 'estatus', '${control.estatus}')">
+                            ${control.estatus}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 italic">${control.evidencia}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <button onclick="eliminarControl(${indiceReal})" class="text-red-500 hover:text-red-700 font-medium bg-red-50 px-3 py-1 rounded-full text-xs">🗑️ Eliminar</button>
+                    </td>
+                `;
+                tbody.appendChild(fila);
+            });
+            actualizarTabsUI();
+        }
+
+        function getStatusClass(estatus) {
+            if (estatus === 'Activo') return 'status-activo';
+            if (estatus === 'Parcial') return 'status-parcial';
+            return 'status-pendiente';
+        }
+
+        function actualizarTabsUI() {
+            const tabs = ['tab-todos', 'tab-iso', 'tab-nist', 'tab-pci'];
+            tabs.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.classList.remove('tab-active', 'bg-white', 'shadow-sm');
+                    el.classList.add('hover:bg-gray-200');
+                }
+            });
+            const activeId = filtroActual === 'TODOS' ? 'tab-todos' : 
+                             filtroActual === 'ISO 27001' ? 'tab-iso' : 
+                             filtroActual === 'NIST CSF' ? 'tab-nist' : 'tab-pci';
+            const activeEl = document.getElementById(activeId);
+            if(activeEl) {
+                activeEl.classList.add('tab-active', 'bg-white', 'shadow-sm');
+            }
+        }
+
+        // ==========================================================================
+        // 3. FUNCIONES DE INTERACCIÓN (CRUD MANUAL)
+        // ==========================================================================
+        window.filtrarEstandar = function(estandar) {
+            filtroActual = estandar;
+            renderizarDashboard();
+        };
+
+        window.editarCelda = function(indice, campo, valorActual) {
+            const nuevoValor = prompt(`Editar ${campo}:`, valorActual);
+            if (nuevoValor !== null && nuevoValor.trim() !== '') {
+                datosControles[indice][campo] = nuevoValor.trim();
+                guardarEnStorage();
+                renderizarDashboard();
+            }
+        };
+
+        window.eliminarControl = function(indice) {
+            if (confirm('¿Eliminar este control permanentemente?')) {
+                datosControles.splice(indice, 1);
+                guardarEnStorage();
+                renderizarDashboard();
+            }
+        };
+
+        // --- Lógica del Modal ---
+        window.abrirModalAgregar = function() {
+            document.getElementById('modalForm').style.display = 'block';
+            document.getElementById('new-id').value = '';
+            document.getElementById('new-nombre').value = '';
+            document.getElementById('new-owner').value = '';
+            document.getElementById('new-evidencia').value = '';
+        };
+
+        window.cerrarModal = function() {
+            document.getElementById('modalForm').style.display = 'none';
+        };
+
+        window.guardarNuevoControl = function(event) {
+            event.preventDefault();
+            
+            const nuevo = {
+                estandar: document.getElementById('new-estandar').value,
+                id: document.getElementById('new-id').value,
+                nombre: document.getElementById('new-nombre').value,
+                owner: document.getElementById('new-owner').value,
+                estatus: document.getElementById('new-estatus').value,
+                evidencia: document.getElementById('new-evidencia').value || 'Pendiente'
+            };
+            
+            datosControles.push(nuevo);
+            guardarEnStorage();
+            renderizarDashboard();
+            cerrarModal();
+            
+            alert(`✅ Control ${nuevo.id} agregado correctamente.`);
+        };
+
+        window.reiniciarDemo = function() {
+            if (confirm('¿Perder los cambios actuales y volver a los datos de ejemplo?')) {
+                datosControles = [...datosDemo];
+                guardarEnStorage();
+                filtroActual = 'TODOS';
+                renderizarDashboard();
+            }
+        };
+
+        window.exportarCSV = function() {
+            let csv = "Estándar,ID Control,Nombre,Owner,Estatus,Evidencia\n";
+            // Exportar también ordenado
+            const ordenados = [...datosControles].sort((a, b) => {
+                if (a.estandar < b.estandar) return -1;
+                if (a.estandar > b.estandar) return 1;
+                return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });
+            });
+            ordenados.forEach(c => {
+                csv += `"${c.estandar}","${c.id}","${c.nombre}","${c.owner}","${c.estatus}","${c.evidencia}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `respaldo_auditoria_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        // Fecha Header
+        function setFecha() {
+            const hoy = new Date();
+            document.getElementById('fecha-actual').innerText = hoy.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        // Cerrar modal si se da clic fuera
+        window.onclick = function(event) {
+            const modal = document.getElementById('modalForm');
+            if (event.target === modal) {
+                modal.style.display = "none";
+            }
+        }
+
+        // ==========================================================================
+        // 4. ARRANQUE
+        // ==========================================================================
+        window.onload = function() {
+            setFecha();
+            renderizarDashboard();
+            console.log("🇲🇽 Dashboard listo. Ordenamiento natural activado (A.5.1, A.5.2, A.5.10...).");
+        };
+    </script>
+</body>
+</html>

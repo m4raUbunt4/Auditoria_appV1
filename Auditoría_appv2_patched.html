@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- CSP: restringe orígenes permitidos para scripts, estilos y conexiones -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com;
+                 style-src  'self' 'unsafe-inline' https://fonts.googleapis.com;
+                 font-src   https://fonts.gstatic.com;
+                 img-src    'self' data:;
+                 connect-src https://api.anthropic.com;">
+  <title>SecArch | Dashboard de Cumplimiento</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SRI: integridad verificada del script de Chart.js -->
+  <!-- Chart.js eliminado — anillos dibujados con Canvas 2D API nativa (sin dependencia CDN) -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --navy: #0A3D62; --navy-light: #1565A8;
+      --bg: #EEF2F7; --surface: #FFFFFF;
+      --border: #E2E8F0;
+      --text: #1A2332; --text-2: #64748B; --text-3: #94A3B8;
+      --green: #10B981; --amber: #F59E0B; --red: #DC2626; --blue: #3B82F6;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Framework badges */
+    .f-ISO    { background:#EFF6FF; color:#1D4ED8; border:1px solid #BFDBFE; }
+    .f-NIST   { background:#EEF2FF; color:#4338CA; border:1px solid #C7D2FE; }
+    .f-PCI    { background:#FFF7ED; color:#C2410C; border:1px solid #FED7AA; }
+    .f-CNBV   { background:#F5F3FF; color:#6D28D9; border:1px solid #DDD6FE; }
+    .f-Banxico{ background:#F0FDFA; color:#0F766E; border:1px solid #99F6E4; }
+
+    /* Risk badges */
+    .r-Alto   { background:#FEF2F2; color:#B91C1C; border:1px solid #FECACA; }
+    .r-Medio  { background:#FFFBEB; color:#B45309; border:1px solid #FDE68A; }
+    .r-Bajo   { background:#F0FDF4; color:#15803D; border:1px solid #BBF7D0; }
+
+    /* Status */
+    .s-Activo   { background:#10B981; color:#fff; }
+    .s-Parcial  { background:#F59E0B; color:#fff; }
+    .s-Pendiente{ background:#DC2626; color:#fff; }
+
+    /* Tabs */
+    .tab-btn { border-radius:6px; padding:7px 14px; font-size:13px; font-weight:500; cursor:pointer; transition:all .15s; border:none; background:transparent; color:#64748B; }
+    .tab-btn.active { background:#fff; color:var(--navy); font-weight:700; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+    .tab-btn:hover:not(.active) { background:rgba(255,255,255,.6); color:var(--text); }
+
+    /* Modal */
+    .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); z-index:200; align-items:center; justify-content:center; }
+    .overlay.open { display:flex; }
+    .modal-box { background:#fff; border-radius:16px; width:100%; max-width:520px; max-height:90vh; overflow-y:auto; box-shadow:0 24px 60px rgba(0,0,0,.25); }
+    .modal-box::-webkit-scrollbar { width:4px; } .modal-box::-webkit-scrollbar-thumb { background:#CBD5E1; border-radius:2px; }
+
+    /* Cards */
+    .card { background:#fff; border-radius:12px; border:1px solid var(--border); box-shadow:0 1px 4px rgba(0,0,0,.05); }
+    .ring-card { transition:transform .2s, box-shadow .2s; }
+    .ring-card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(10,61,98,.13); }
+
+    /* Table */
+    .tbl-row { border-bottom:1px solid #F1F5F9; transition:background .1s; }
+    .tbl-row:hover { background:#F8FAFC; }
+    .tbl-row:last-child { border-bottom:none; }
+    th { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:#94A3B8; padding:10px 14px; text-align:left; }
+    td { padding:10px 14px; font-size:13px; vertical-align:middle; }
+
+    /* Badge base */
+    .badge { display:inline-flex; align-items:center; padding:2px 9px; border-radius:100px; font-size:11px; font-weight:600; white-space:nowrap; }
+
+    /* Inputs */
+    .inp { width:100%; border:1px solid #E2E8F0; border-radius:8px; padding:8px 12px; font-size:13px; font-family:'Inter',sans-serif; color:var(--text); background:#FAFAFA; transition:border-color .15s, box-shadow .15s; }
+    .inp:focus { outline:none; border-color:var(--navy); box-shadow:0 0 0 3px rgba(10,61,98,.1); background:#fff; }
+
+    /* AI panel */
+    .ai-header { background:linear-gradient(135deg,#0A3D62 0%,#1565A8 100%); border-radius:12px 12px 0 0; }
+
+    /* Scrollbar global */
+    ::-webkit-scrollbar { width:5px; height:5px; }
+    ::-webkit-scrollbar-track { background:#F1F5F9; }
+    ::-webkit-scrollbar-thumb { background:#CBD5E1; border-radius:3px; }
+
+    /* Overdue date */
+    .overdue { color:#DC2626; font-weight:600; }
+
+    /* Pulse for critical */
+    @keyframes pulse-ring { 0%,100%{opacity:1} 50%{opacity:.5} }
+    .pulse { animation:pulse-ring 2s infinite; }
+
+    /* Tooltip */
+    [data-tip] { position:relative; }
+    [data-tip]:hover::after { content:attr(data-tip); position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:#1A2332; color:#fff; font-size:11px; padding:4px 8px; border-radius:6px; white-space:nowrap; z-index:50; pointer-events:none; }
+
+    @media print { .no-print { display:none!important; } body { background:#fff; } .card { box-shadow:none; border:1px solid #ddd; } }
+    @media (max-width:768px) { td,th { padding:8px 10px; } .ring-row { grid-template-columns: repeat(2,1fr)!important; } }
+  </style>
+</head>
+<body class="p-4 md:p-6">
+
+  <!-- ═══════════════════════════════════════════════════════════
+       MODALES
+  ═══════════════════════════════════════════════════════════ -->
+
+  <!-- Modal Agregar / Editar -->
+  <div class="overlay" id="modalForm">
+    <div class="modal-box">
+      <div class="p-6 border-b border-gray-100">
+        <div class="flex justify-between items-center">
+          <h2 class="text-lg font-bold text-gray-800" id="modal-title">Agregar Control</h2>
+          <button onclick="closeModal('modalForm')" class="text-gray-400 hover:text-gray-600 text-xl leading-none no-print">✕</button>
+        </div>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1.5">Estándar *</label>
+            <select id="f-estandar" class="inp">
+              <option>ISO 27001</option><option>NIST CSF</option><option>PCI DSS</option><option>CNBV</option><option>Banxico</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1.5">ID Control *</label>
+            <input id="f-id" class="inp mono" type="text" maxlength="30" placeholder="A.5.1 / ID.AM-1 / Req 1.1">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1.5">Nombre del Control *</label>
+          <input id="f-nombre" class="inp" type="text" maxlength="150" placeholder="Ej. Gestión de Accesos Privilegiados">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1.5">Owner *</label>
+            <input id="f-owner" class="inp" type="text" maxlength="50" placeholder="CISO / IAM / SOC">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1.5">Riesgo *</label>
+            <select id="f-riesgo" class="inp">
+              <option>Alto</option><option>Medio</option><option>Bajo</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1.5">Estatus *</label>
+            <select id="f-estatus" class="inp">
+              <option>Activo</option><option>Parcial</option><option>Pendiente</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1.5">Fecha Revisión</label>
+            <input id="f-fecha" class="inp" type="date">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1.5">Evidencia</label>
+          <input id="f-evidencia" class="inp" type="text" maxlength="120" placeholder="Nombre de archivo o N/A">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1.5">Notas</label>
+          <textarea id="f-notas" class="inp" rows="2" maxlength="500" style="resize:vertical" placeholder="Observaciones, pendientes, contexto..."></textarea>
+        </div>
+      </div>
+      <div class="p-6 pt-2 flex justify-end gap-3 no-print">
+        <button onclick="closeModal('modalForm')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">Cancelar</button>
+        <button onclick="saveControl()" class="px-5 py-2 rounded-lg text-sm font-semibold text-white transition" style="background:var(--navy)" id="save-btn">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Análisis IA -->
+  <div class="overlay" id="modalAI">
+    <div class="modal-box" style="max-width:680px">
+      <div class="ai-header p-6 text-white">
+        <div class="flex justify-between items-start">
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-widest opacity-70 mb-1">Powered by Claude</div>
+            <h2 class="text-xl font-bold">Análisis de Brecha IA</h2>
+            <p class="text-sm opacity-70 mt-1">Análisis inteligente de tu postura de cumplimiento</p>
+          </div>
+          <button onclick="closeModal('modalAI')" class="text-white opacity-60 hover:opacity-100 text-xl leading-none no-print">✕</button>
+        </div>
+      </div>
+
+      <!-- API Key section -->
+      <div id="ai-key-section" class="p-6 border-b border-gray-100">
+        <label class="block text-xs font-semibold text-gray-500 mb-1.5">Anthropic API Key</label>
+        <div class="flex gap-2">
+          <input id="ai-api-key" class="inp flex-1" type="password" placeholder="sk-ant-api03-...">
+          <button onclick="saveApiKey()" class="px-4 py-2 text-sm font-semibold text-white rounded-lg transition no-print" style="background:var(--navy)">Guardar</button>
+        </div>
+        <p class="text-xs text-gray-400 mt-1.5">Guardada localmente. Obtén tu key en <a href="https://console.anthropic.com" target="_blank" class="underline">console.anthropic.com</a></p>
+        <p class="text-xs text-amber-600 mt-1 font-medium">⚠️ El análisis envía estadísticas agregadas de tus controles a la API de Anthropic. No incluyas información clasificada en campos de notas/evidencia antes de analizar.</p>
+      </div>
+
+      <div class="p-6">
+        <div id="ai-result" class="text-sm text-gray-500 italic">
+          Configura tu API Key y haz clic en Analizar para obtener un análisis ejecutivo de tu postura de cumplimiento.
+        </div>
+        <div id="ai-loading" style="display:none" class="flex items-center gap-3 py-4">
+          <div class="w-5 h-5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          <span class="text-sm text-gray-500">Analizando controles...</span>
+        </div>
+      </div>
+
+      <div class="p-6 pt-2 flex justify-end gap-3 no-print">
+        <button onclick="closeModal('modalAI')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">Cerrar</button>
+        <button onclick="runAIAnalysis()" class="px-5 py-2 rounded-lg text-sm font-semibold text-white transition flex items-center gap-2" style="background:var(--navy)">
+          <span>🤖</span> Analizar con IA
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Notas (ver notas completas) -->
+  <div class="overlay" id="modalNotas">
+    <div class="modal-box" style="max-width:420px">
+      <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+        <h3 class="font-bold text-gray-800" id="notas-title">Notas del Control</h3>
+        <button onclick="closeModal('modalNotas')" class="text-gray-400 hover:text-gray-600 text-xl no-print">✕</button>
+      </div>
+      <div class="p-6">
+        <p id="notas-content" class="text-sm text-gray-700 leading-relaxed"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       LAYOUT PRINCIPAL
+  ═══════════════════════════════════════════════════════════ -->
+  <div class="max-w-screen-xl mx-auto">
+
+    <!-- HEADER -->
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-6">
+      <div>
+        <div class="flex items-center gap-3 mb-1">
+          <div class="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-sm" style="background:var(--navy)">SA</div>
+          <h1 class="text-2xl font-bold" style="color:var(--navy)">SecArch <span class="text-lg font-normal text-gray-400">| Dashboard de Cumplimiento</span></h1>
+        </div>
+        <p class="text-sm text-gray-400 ml-12">ISO 27001 · NIST CSF · PCI DSS · CNBV · Banxico &nbsp;|&nbsp; <span class="text-green-600 font-medium">💾 Datos guardados localmente</span></p>
+      </div>
+      <div class="text-right">
+        <div class="text-lg font-semibold text-gray-700" id="header-date"></div>
+        <div class="text-xs text-gray-400 mt-0.5">🇲🇽 Ciudad de México</div>
+      </div>
+    </div>
+
+    <!-- KPI CARDS -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+      <div class="card p-5 border-l-4" style="border-left-color:#64748B">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Total Controles</p>
+        <p class="text-3xl font-bold text-gray-800" id="kpi-total">0</p>
+        <p class="text-xs text-gray-400 mt-1" id="kpi-frameworks">0 marcos</p>
+      </div>
+      <div class="card p-5 border-l-4" style="border-left-color:#10B981">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Activos</p>
+        <p class="text-3xl font-bold text-green-600" id="kpi-activos">0</p>
+        <p class="text-xs text-gray-400 mt-1" id="kpi-pct-activo">— %</p>
+      </div>
+      <div class="card p-5 border-l-4" style="border-left-color:#F59E0B">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Parciales</p>
+        <p class="text-3xl font-bold text-amber-500" id="kpi-parciales">0</p>
+        <p class="text-xs text-gray-400 mt-1" id="kpi-pct-parcial">— %</p>
+      </div>
+      <div class="card p-5 border-l-4" style="border-left-color:#DC2626">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Pendientes / Críticos</p>
+        <p class="text-3xl font-bold text-red-600" id="kpi-pendientes">0</p>
+        <p class="text-xs text-gray-400 mt-1" id="kpi-riesgo-alto">0 riesgo alto</p>
+      </div>
+    </div>
+
+    <!-- COMPLIANCE RINGS ROW -->
+    <div class="grid ring-row gap-4 mb-5" style="grid-template-columns:repeat(5,1fr)" id="rings-container"></div>
+
+    <!-- CONTROL BAR -->
+    <div class="card p-4 mb-4 flex flex-wrap items-center gap-3 no-print">
+      <!-- Framework tabs -->
+      <div class="flex gap-1 bg-gray-100 p-1 rounded-lg flex-wrap">
+        <button class="tab-btn active" data-std="TODOS" onclick="setFilter('std','TODOS',this)">Todos</button>
+        <button class="tab-btn" data-std="ISO 27001" onclick="setFilter('std','ISO 27001',this)">ISO 27001</button>
+        <button class="tab-btn" data-std="NIST CSF" onclick="setFilter('std','NIST CSF',this)">NIST CSF</button>
+        <button class="tab-btn" data-std="PCI DSS" onclick="setFilter('std','PCI DSS',this)">PCI DSS</button>
+        <button class="tab-btn" data-std="CNBV" onclick="setFilter('std','CNBV',this)">CNBV</button>
+        <button class="tab-btn" data-std="Banxico" onclick="setFilter('std','Banxico',this)">Banxico</button>
+      </div>
+
+      <!-- Status filter -->
+      <select id="status-filter" onchange="setFilter('status', this.value)" class="inp" style="width:auto;padding:7px 12px;font-size:13px">
+        <option value="TODOS">Todos los estatus</option>
+        <option value="Activo">✅ Activos</option>
+        <option value="Parcial">⚠️ Parciales</option>
+        <option value="Pendiente">🔴 Pendientes</option>
+      </select>
+
+      <!-- Search -->
+      <div class="flex-1 min-w-48 relative">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+        <input id="search-inp" class="inp" style="padding-left:32px" type="text" placeholder="Buscar control..." oninput="setFilter('search', this.value)">
+      </div>
+
+      <!-- Actions -->
+      <div class="flex gap-2 ml-auto">
+        <button onclick="openAddModal()" class="flex items-center gap-2 px-4 py-2 text-white text-sm font-semibold rounded-lg shadow-sm transition hover:opacity-90" style="background:var(--navy)">
+          ➕ Agregar
+        </button>
+        <button onclick="openModal('modalAI')" class="flex items-center gap-2 px-4 py-2 text-white text-sm font-semibold rounded-lg transition hover:opacity-90" style="background:#1565A8">
+          🤖 IA
+        </button>
+        <button onclick="exportCSV()" class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg transition">
+          ⬇️ CSV
+        </button>
+        <button onclick="resetDemo()" class="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-500 text-sm rounded-lg transition" title="Reiniciar datos demo">
+          🔄
+        </button>
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="card overflow-hidden mb-6">
+      <div class="overflow-x-auto">
+        <table class="w-full" style="min-width:900px">
+          <thead style="background:#F8FAFC; border-bottom:2px solid #E2E8F0">
+            <tr>
+              <th>Estándar</th>
+              <th>ID Control</th>
+              <th>Nombre del Control</th>
+              <th>Owner</th>
+              <th>Riesgo</th>
+              <th>Estatus</th>
+              <th>Fecha Revisión</th>
+              <th>Evidencia</th>
+              <th class="no-print">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbl-body"></tbody>
+        </table>
+      </div>
+      <div class="px-4 py-2.5 border-t border-gray-100 flex justify-between items-center" style="background:#FAFAFA">
+        <span class="text-xs text-gray-400" id="tbl-count">— controles</span>
+        <span class="text-xs text-gray-400">💡 Clic en Estatus u Owner para edición rápida · Botón ✏️ para edición completa</span>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="text-xs text-gray-400 text-center pb-4">
+      SecArch v2.0 &nbsp;·&nbsp; Security Architecture Compliance Dashboard &nbsp;·&nbsp; Datos almacenados localmente en tu navegador
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       JAVASCRIPT
+  ═══════════════════════════════════════════════════════════ -->
+  <script>
+  // ── SECURITY: HTML ENTITY ENCODER (XSS prevention) ──────────
+  function esc(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;');
+  }
+
+  // ── SECURITY: CSV SAFE (Formula Injection prevention) ────────
+  function csvSafe(v) {
+    const s = String(v == null ? '' : v).replace(/"/g, '""');
+    if (s.length && ['=', '+', '-', '@', '\t', '\r'].includes(s[0])) return `'${s}`;
+    return s;
+  }
+  const SK = 'secarch_v2';
+  const AK = 'secarch_apikey';
+
+  const FW = {
+    'ISO 27001': { cls:'f-ISO',     color:'#3B82F6', short:'ISO'    },
+    'NIST CSF':  { cls:'f-NIST',    color:'#6366F1', short:'NIST'   },
+    'PCI DSS':   { cls:'f-PCI',     color:'#F97316', short:'PCI'    },
+    'CNBV':      { cls:'f-CNBV',    color:'#8B5CF6', short:'CNBV'   },
+    'Banxico':   { cls:'f-Banxico', color:'#0D9488', short:'BX'     }
+  };
+
+  // ── DEMO DATA ────────────────────────────────────────────────
+  const DEMO = [
+    // ISO 27001
+    { estandar:'ISO 27001', id:'A.5.1',  nombre:'Políticas de Seguridad de la Información', owner:'CISO',         riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-03-15', evidencia:'politica_seg_v3.pdf',    notas:'' },
+    { estandar:'ISO 27001', id:'A.5.2',  nombre:'Funciones y Responsabilidades',              owner:'CISO',         riesgo:'Medio', estatus:'Parcial',   fechaRevision:'2025-01-10', evidencia:'matriz_resp_v1.pdf',     notas:'Pendiente actualizar con nuevas áreas' },
+    { estandar:'ISO 27001', id:'A.6.1',  nombre:'Seguridad en Dispositivos Móviles',          owner:'TI',           riesgo:'Alto',  estatus:'Pendiente', fechaRevision:'',           evidencia:'N/A',                    notas:'Política pendiente de aprobación' },
+    { estandar:'ISO 27001', id:'A.8.1',  nombre:'Inventario de Activos de Información',       owner:'TI',           riesgo:'Alto',  estatus:'Parcial',   fechaRevision:'2025-02-20', evidencia:'inv_activos_2025.xlsx',  notas:'' },
+    { estandar:'ISO 27001', id:'A.9.1',  nombre:'Control de Acceso — Política',               owner:'IAM',          riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-04-01', evidencia:'iam_policy_v2.pdf',      notas:'' },
+    { estandar:'ISO 27001', id:'A.12.1', nombre:'Procedimientos Operativos de TI',            owner:'Operaciones',  riesgo:'Medio', estatus:'Activo',    fechaRevision:'2025-03-01', evidencia:'proc_op_v4.pdf',         notas:'' },
+    { estandar:'ISO 27001', id:'A.14.1', nombre:'Requisitos de Seguridad en Sistemas',        owner:'Arquitectura', riesgo:'Alto',  estatus:'Parcial',   fechaRevision:'2025-01-25', evidencia:'sec_req_draft.pdf',      notas:'Falta validar con Dev' },
+    // NIST CSF
+    { estandar:'NIST CSF',  id:'ID.AM-1',  nombre:'Inventario de Dispositivos y Sistemas',    owner:'Infra',         riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-03-20', evidencia:'inv_hardware.xlsx',      notas:'' },
+    { estandar:'NIST CSF',  id:'ID.AM-2',  nombre:'Inventario de Plataformas de Software',    owner:'Infra',         riesgo:'Alto',  estatus:'Parcial',   fechaRevision:'2025-02-15', evidencia:'inv_sw_parcial.xlsx',    notas:'Falta incluir cloud assets' },
+    { estandar:'NIST CSF',  id:'PR.AC-1',  nombre:'Gestión de Identidades y Credenciales',    owner:'IAM Team',      riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-04-10', evidencia:'azure_ad_report.pdf',    notas:'' },
+    { estandar:'NIST CSF',  id:'PR.DS-1',  nombre:'Protección de Datos en Reposo',            owner:'Arquitectura',  riesgo:'Alto',  estatus:'Parcial',   fechaRevision:'2025-01-20', evidencia:'enc_policy_draft.pdf',   notas:'' },
+    { estandar:'NIST CSF',  id:'DE.CM-1',  nombre:'Monitoreo Continuo de Red',                owner:'SOC',           riesgo:'Alto',  estatus:'Pendiente', fechaRevision:'',           evidencia:'N/A',                    notas:'SIEM en proceso de configuración' },
+    { estandar:'NIST CSF',  id:'RS.RP-1',  nombre:'Plan de Respuesta a Incidentes',           owner:'CISO',          riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-03-05', evidencia:'IRP_v2.pdf',             notas:'' },
+    // PCI DSS
+    { estandar:'PCI DSS',   id:'Req 1.1',  nombre:'Firewall y Segmentación de Red CDE',       owner:'NetSec',        riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-02-28', evidencia:'fw_rules_review.pdf',    notas:'' },
+    { estandar:'PCI DSS',   id:'Req 2.1',  nombre:'Configuraciones Seguras de Sistemas',      owner:'SysAdmin',      riesgo:'Medio', estatus:'Activo',    fechaRevision:'2025-03-10', evidencia:'cis_benchmark.txt',      notas:'' },
+    { estandar:'PCI DSS',   id:'Req 6.1',  nombre:'Gestión de Vulnerabilidades y Parches',    owner:'Seguridad',     riesgo:'Alto',  estatus:'Pendiente', fechaRevision:'',           evidencia:'reporte_nessus.pdf',     notas:'Parches críticos pendientes > 30 días' },
+    { estandar:'PCI DSS',   id:'Req 8.1',  nombre:'Identificación y Autenticación de Usuarios',owner:'IAM',          riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-04-05', evidencia:'user_mgmt_proc.pdf',     notas:'' },
+    { estandar:'PCI DSS',   id:'Req 10.1', nombre:'Auditoría de Logs y Trazabilidad',         owner:'SOC',           riesgo:'Alto',  estatus:'Parcial',   fechaRevision:'2025-02-10', evidencia:'siem_config_partial.pdf',notas:'' },
+    // CNBV
+    { estandar:'CNBV',      id:'CUB-164',  nombre:'Gestión de Riesgos Tecnológicos',          owner:'CISO',          riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-03-15', evidencia:'gestion_riesgos_TI.pdf', notas:'' },
+    { estandar:'CNBV',      id:'CUB-168',  nombre:'Continuidad de Negocio de TI',             owner:'TI',            riesgo:'Alto',  estatus:'Parcial',   fechaRevision:'2025-01-30', evidencia:'bcp_draft.pdf',          notas:'Plan aprobado, falta prueba semestral' },
+    { estandar:'CNBV',      id:'CUB-172',  nombre:'Seguridad de la Información (CUAB)',       owner:'CISO',          riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-04-01', evidencia:'politica_si_cnbv.pdf',   notas:'' },
+    { estandar:'CNBV',      id:'CUB-175',  nombre:'Auditoría de Sistemas de Información',     owner:'Auditoría',     riesgo:'Medio', estatus:'Pendiente', fechaRevision:'',           evidencia:'N/A',                    notas:'Pendiente calendarizar auditoría interna' },
+    // Banxico
+    { estandar:'Banxico',   id:'C3-Sec.35',nombre:'Seguridad en Sistemas de Pago SPEI',       owner:'Arquitectura',  riesgo:'Alto',  estatus:'Activo',    fechaRevision:'2025-03-20', evidencia:'spei_security_review.pdf',notas:'' },
+    { estandar:'Banxico',   id:'C3-Sec.40',nombre:'Cifrado de Mensajería Financiera',         owner:'Arquitectura',  riesgo:'Alto',  estatus:'Parcial',   fechaRevision:'2025-02-15', evidencia:'cifrado_parcial.pdf',    notas:'Migración a TLS 1.3 en progreso' },
+    { estandar:'Banxico',   id:'C3-Sec.45',nombre:'Controles de Acceso a SPEI',               owner:'IAM',           riesgo:'Alto',  estatus:'Pendiente', fechaRevision:'',           evidencia:'N/A',                    notas:'Requiere revisión urgente — SPEI critico' }
+  ];
+
+  // ── STATE ────────────────────────────────────────────────────
+  let data = [];
+  let editIdx = -1;
+  let filters = { std:'TODOS', status:'TODOS', search:'' };
+
+  // ── STORAGE ──────────────────────────────────────────────────
+  function load() {
+    try { const s = localStorage.getItem(SK); data = s ? JSON.parse(s) : [...DEMO]; }
+    catch(e) { data = [...DEMO]; }
+    if (!data.length) data = [...DEMO];
+    save();
+  }
+  function save() { localStorage.setItem(SK, JSON.stringify(data)); }
+  function resetDemo() {
+    if (!confirm('¿Restaurar los datos de ejemplo? Se perderán los cambios actuales.')) return;
+    data = [...DEMO]; save(); filters = { std:'TODOS', status:'TODOS', search:'' };
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('[data-std="TODOS"]').classList.add('active');
+    document.getElementById('status-filter').value = 'TODOS';
+    document.getElementById('search-inp').value = '';
+    render();
+  }
+
+  // ── FILTERS ──────────────────────────────────────────────────
+  function setFilter(type, val, btn) {
+    filters[type === 'std' ? 'std' : type === 'status' ? 'status' : 'search'] = val;
+    if (type === 'std' && btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+    render();
+  }
+
+  function filtered() {
+    return data.filter(c => {
+      const matchStd = filters.std === 'TODOS' || c.estandar === filters.std;
+      const matchSt  = filters.status === 'TODOS' || c.estatus === filters.status;
+      const q = filters.search.toLowerCase();
+      const matchQ   = !q || c.nombre.toLowerCase().includes(q) || c.id.toLowerCase().includes(q) || c.owner.toLowerCase().includes(q);
+      return matchStd && matchSt && matchQ;
+    }).sort((a,b) => {
+      if (a.estandar < b.estandar) return -1;
+      if (a.estandar > b.estandar) return 1;
+      return a.id.localeCompare(b.id, undefined, { numeric:true, sensitivity:'base' });
+    });
+  }
+
+  // ── DATE UTILS ───────────────────────────────────────────────
+  function isOverdue(d) {
+    if (!d) return false;
+    const diff = (Date.now() - new Date(d)) / 86400000;
+    return diff > 90;
+  }
+  function fmtDate(d) {
+    if (!d) return '<span class="text-gray-300">—</span>';
+    const dt = new Date(d + 'T00:00:00');
+    const label = dt.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
+    return isOverdue(d) ? `<span class="overdue" title="Revisión vencida (+90 días)">⚠️ ${label}</span>` : label;
+  }
+
+  // ── RENDER KPIs ──────────────────────────────────────────────
+  function renderKPIs() {
+    const tot = data.length;
+    const act = data.filter(c=>c.estatus==='Activo').length;
+    const par = data.filter(c=>c.estatus==='Parcial').length;
+    const pen = data.filter(c=>c.estatus==='Pendiente').length;
+    const altos = data.filter(c=>c.estatus!=='Activo' && c.riesgo==='Alto').length;
+    const fwCount = new Set(data.map(c=>c.estandar)).size;
+    document.getElementById('kpi-total').textContent = tot;
+    document.getElementById('kpi-activos').textContent = act;
+    document.getElementById('kpi-parciales').textContent = par;
+    document.getElementById('kpi-pendientes').textContent = pen;
+    document.getElementById('kpi-pct-activo').textContent = tot ? `${Math.round(act/tot*100)}% cumplimiento` : '—';
+    document.getElementById('kpi-pct-parcial').textContent = tot ? `${Math.round(par/tot*100)}% en progreso` : '—';
+    document.getElementById('kpi-riesgo-alto').textContent = `${altos} riesgo alto`;
+    document.getElementById('kpi-frameworks').textContent = `${fwCount} marcos activos`;
+  }
+
+  // ── NATIVE CANVAS RING DRAW (sin Chart.js — Canvas 2D API pura) ──
+  function drawNativeRing(canvas, act, par, pen, total) {
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const size = 80;
+    canvas.width  = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width  = size + 'px';
+    canvas.style.height = size + 'px';
+    ctx.scale(dpr, dpr);
+
+    const cx = size / 2, cy = size / 2, r = 30, lw = 9;
+
+    ctx.clearRect(0, 0, size, size);
+
+    if (total === 0) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+      return;
+    }
+
+    const segs = [
+      { v: act, c: '#10B981' },
+      { v: par, c: '#F59E0B' },
+      { v: pen, c: '#DC2626' }
+    ].filter(s => s.v > 0);
+
+    // Background track
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = '#F1F5F9';
+    ctx.lineWidth = lw;
+    ctx.stroke();
+
+    const gap   = segs.length > 1 ? 0.04 : 0;
+    const total2pi = Math.PI * 2 - segs.length * gap;
+    let start = -Math.PI / 2;
+
+    segs.forEach(seg => {
+      const sweep = (seg.v / total) * total2pi;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, start, start + sweep);
+      ctx.strokeStyle = seg.c;
+      ctx.lineWidth = lw;
+      ctx.lineCap = segs.length === 1 ? 'butt' : 'round';
+      ctx.stroke();
+      start += sweep + gap;
+    });
+  }
+
+  // ── RENDER RINGS ─────────────────────────────────────────────
+  function renderRings() {
+    const container = document.getElementById('rings-container');
+    const frameworks = Object.keys(FW);
+    container.innerHTML = '';
+
+    frameworks.forEach(fw => {
+      const subset = data.filter(c => c.estandar === fw);
+      const total = subset.length;
+      const act   = subset.filter(c=>c.estatus==='Activo').length;
+      const par   = subset.filter(c=>c.estatus==='Parcial').length;
+      const pen   = subset.filter(c=>c.estatus==='Pendiente').length;
+      const pct   = total ? Math.round(act/total*100) : 0;
+      const color = pct>=70 ? '#10B981' : pct>=40 ? '#F59E0B' : '#DC2626';
+      const cfg = FW[fw];
+
+      const div = document.createElement('div');
+      div.className = 'card ring-card p-4 cursor-pointer';
+      div.style.cssText = 'border-top:3px solid ' + cfg.color;
+      div.onclick = () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.querySelector(`[data-std="${fw}"]`);
+        if (btn) btn.classList.add('active');
+        setFilter('std', fw);
+      };
+      div.innerHTML = `
+        <div class="text-center mb-2">
+          <span class="badge ${cfg.cls}" style="font-size:10px">${fw}</span>
+        </div>
+        <div class="relative mx-auto" style="width:80px;height:80px">
+          <canvas id="ring-${cfg.short}" width="80" height="80"></canvas>
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span class="text-lg font-bold" style="color:${color}">${pct}%</span>
+          </div>
+        </div>
+        <div class="mt-3 space-y-1 text-xs text-center">
+          <div class="text-gray-400">${total} controles</div>
+          <div class="flex justify-center gap-2">
+            <span class="text-green-600 font-semibold">${act}✅</span>
+            <span class="text-amber-500 font-semibold">${par}⚠️</span>
+            <span class="text-red-600 font-semibold">${pen}🔴</span>
+          </div>
+        </div>`;
+      container.appendChild(div);
+
+      // Dibujar anillo con Canvas 2D API nativa
+      requestAnimationFrame(() => {
+        const canvas = document.getElementById(`ring-${cfg.short}`);
+        if (canvas) drawNativeRing(canvas, act, par, pen, total);
+      });
+    });
+  }
+
+  // ── RENDER TABLE ─────────────────────────────────────────────
+  function renderTable() {
+    const rows = filtered();
+    const tbody = document.getElementById('tbl-body');
+    document.getElementById('tbl-count').textContent = `${rows.length} de ${data.length} controles`;
+
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-gray-400 text-sm">Sin resultados. Ajusta los filtros o agrega un nuevo control.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = rows.map(c => {
+      const ri = data.indexOf(c);
+      const fwCfg = FW[c.estandar] || {};
+      const isHighRisk = c.riesgo === 'Alto' && c.estatus === 'Pendiente';
+      const notaClip = c.notas && c.notas.length > 30 ? c.notas.slice(0,30)+'…' : (c.notas||'');
+      return `
+      <tr class="tbl-row${isHighRisk?' bg-red-50/40':''}">
+        <td><span class="badge ${esc(fwCfg.cls||'')}">${esc(c.estandar)}</span></td>
+        <td><span class="mono text-xs font-semibold text-gray-600">${esc(c.id)}</span></td>
+        <td class="max-w-xs">
+          <span class="font-medium text-gray-800">${esc(c.nombre)}</span>
+          ${c.notas ? `<div class="text-xs text-gray-400 mt-0.5 cursor-pointer hover:text-blue-500" data-action="notas" data-idx="${ri}">${esc(notaClip)}</div>` : ''}
+        </td>
+        <td>
+          <span class="text-gray-600 cursor-pointer border-b border-dashed border-gray-300 hover:border-blue-400 hover:text-blue-600"
+                data-action="quickedit" data-idx="${ri}" data-field="owner">${esc(c.owner)}</span>
+        </td>
+        <td><span class="badge r-${esc(c.riesgo)}">${esc(c.riesgo)}</span></td>
+        <td>
+          <span class="badge s-${esc(c.estatus)} cursor-pointer hover:opacity-80"
+                data-action="cyclestatus" data-idx="${ri}">${esc(c.estatus)}</span>
+        </td>
+        <td class="text-xs">${fmtDate(c.fechaRevision)}</td>
+        <td class="text-xs text-gray-500 italic max-w-32 truncate" title="${esc(c.evidencia)}">${esc(c.evidencia||'—')}</td>
+        <td class="no-print">
+          <div class="flex gap-1">
+            <button data-action="edit" data-idx="${ri}" class="px-2.5 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition font-medium">✏️</button>
+            <button data-action="delete" data-idx="${ri}" class="px-2.5 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition font-medium">🗑️</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── MAIN RENDER ──────────────────────────────────────────────
+  function render() {
+    renderKPIs();
+    renderRings();
+    renderTable();
+  }
+
+  // ── EVENT DELEGATION: tabla (reemplaza onclick inline con user data) ──
+  document.getElementById('tbl-body').addEventListener('click', function(e) {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const idx = parseInt(el.dataset.idx);
+    switch(el.dataset.action) {
+      case 'edit':       openEditModal(idx); break;
+      case 'delete':     deleteControl(idx); break;
+      case 'cyclestatus':cycleStatus(idx);   break;
+      case 'quickedit':  quickEdit(idx, el.dataset.field, data[idx][el.dataset.field]); break;
+      case 'notas':      showNotas(idx);     break;
+    }
+  });
+
+  // ── CRUD ─────────────────────────────────────────────────────
+  function openAddModal() {
+    editIdx = -1;
+    document.getElementById('modal-title').textContent = '➕ Agregar Control';
+    document.getElementById('save-btn').textContent = 'Guardar';
+    ['f-estandar','f-id','f-nombre','f-owner','f-riesgo','f-estatus','f-evidencia','f-notas'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el.tagName==='SELECT') el.selectedIndex=0;
+      else el.value='';
+    });
+    document.getElementById('f-fecha').value = '';
+    openModal('modalForm');
+  }
+
+  function openEditModal(idx) {
+    editIdx = idx;
+    const c = data[idx];
+    document.getElementById('modal-title').textContent = '✏️ Editar Control';
+    document.getElementById('save-btn').textContent = 'Actualizar';
+    document.getElementById('f-estandar').value = c.estandar;
+    document.getElementById('f-id').value = c.id;
+    document.getElementById('f-nombre').value = c.nombre;
+    document.getElementById('f-owner').value = c.owner;
+    document.getElementById('f-riesgo').value = c.riesgo;
+    document.getElementById('f-estatus').value = c.estatus;
+    document.getElementById('f-fecha').value = c.fechaRevision||'';
+    document.getElementById('f-evidencia').value = c.evidencia||'';
+    document.getElementById('f-notas').value = c.notas||'';
+    openModal('modalForm');
+  }
+
+  function saveControl() {
+    const id = document.getElementById('f-id').value.trim();
+    const nombre = document.getElementById('f-nombre').value.trim();
+    if (!id || !nombre) { alert('ID y Nombre son obligatorios.'); return; }
+    const obj = {
+      estandar: document.getElementById('f-estandar').value,
+      id, nombre,
+      owner:         document.getElementById('f-owner').value.trim()||'Sin asignar',
+      riesgo:        document.getElementById('f-riesgo').value,
+      estatus:       document.getElementById('f-estatus').value,
+      fechaRevision: document.getElementById('f-fecha').value,
+      evidencia:     document.getElementById('f-evidencia').value.trim()||'Pendiente',
+      notas:         document.getElementById('f-notas').value.trim()
+    };
+    if (editIdx === -1) data.push(obj);
+    else data[editIdx] = obj;
+    save(); render(); closeModal('modalForm');
+  }
+
+  function deleteControl(idx) {
+    const c = data[idx];
+    if (!confirm(`¿Eliminar "${c.nombre}" (${c.id})?`)) return;
+    data.splice(idx, 1); save(); render();
+  }
+
+  function cycleStatus(idx) {
+    const order = ['Activo','Parcial','Pendiente'];
+    const cur = data[idx].estatus;
+    data[idx].estatus = order[(order.indexOf(cur)+1)%3];
+    save(); render();
+  }
+
+  function quickEdit(idx, field, current) {
+    const val = prompt(`Editar ${field}:`, current);
+    if (val !== null && val.trim()) { data[idx][field] = val.trim(); save(); render(); }
+  }
+
+  function showNotas(idx) {
+    const c = data[idx];
+    document.getElementById('notas-title').textContent = `${c.id} — Notas`;
+    document.getElementById('notas-content').textContent = c.notas || 'Sin notas.';
+    openModal('modalNotas');
+  }
+
+  // ── EXPORT ───────────────────────────────────────────────────
+  function exportCSV() {
+    const rows = filtered();
+    let csv = 'Estándar,ID Control,Nombre,Owner,Riesgo,Estatus,Fecha Revisión,Evidencia,Notas\n';
+    rows.forEach(c => {
+      csv += [c.estandar,c.id,c.nombre,c.owner,c.riesgo,c.estatus,c.fechaRevision||'',c.evidencia,c.notas||'']
+        .map(v=>`"${csvSafe(v)}"`).join(',') + '\n';
+    });
+    const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `secarch_auditoria_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  // ── AI ANALYSIS ──────────────────────────────────────────────
+  function saveApiKey() {
+    const k = document.getElementById('ai-api-key').value.trim();
+    if (!k) return;
+    localStorage.setItem(AK, k);
+    document.getElementById('ai-result').innerHTML = '<p class="text-green-600 text-sm font-medium">✅ API Key guardada. Ya puedes ejecutar el análisis.</p>';
+  }
+
+  async function runAIAnalysis() {
+    const key = localStorage.getItem(AK) || document.getElementById('ai-api-key').value.trim();
+    if (!key) { alert('Ingresa tu Anthropic API Key primero.'); return; }
+    localStorage.setItem(AK, key);
+
+    // Stats
+    const tot = data.length;
+    const act = data.filter(c=>c.estatus==='Activo').length;
+    const par = data.filter(c=>c.estatus==='Parcial').length;
+    const pen = data.filter(c=>c.estatus==='Pendiente').length;
+    const altos = data.filter(c=>c.estatus!=='Activo'&&c.riesgo==='Alto');
+    const byFw = Object.keys(FW).map(fw=>{
+      const s=data.filter(c=>c.estandar===fw);
+      const a=s.filter(c=>c.estatus==='Activo').length;
+      return `${fw}: ${s.length} controles, ${a} activos (${s.length?Math.round(a/s.length*100):0}%)`;
+    }).join(' | ');
+
+    const prompt = `Eres un auditor experto en ciberseguridad para el sector financiero en México.
+Analiza el siguiente estado de controles y proporciona un informe ejecutivo conciso en español:
+
+RESUMEN GENERAL: ${tot} controles totales | ${act} activos | ${par} parciales | ${pen} pendientes
+POR MARCO: ${byFw}
+CONTROLES CRÍTICOS PENDIENTES (riesgo alto, sin completar): ${altos.map(c=>`${c.id} (${c.estandar}): ${c.nombre}`).join('; ')}
+
+Por favor proporciona:
+1. 📊 Diagnóstico ejecutivo (2-3 oraciones)
+2. 🔴 Brechas críticas por framework (las más urgentes)
+3. ⚡ Top 5 acciones inmediatas recomendadas
+4. ⚖️ Riesgo regulatorio (CNBV/Banxico específicamente)
+5. 📈 Estimación de plazo para alcanzar cumplimiento >80%
+
+Sé directo y específico, como si presentaras al Comité de Riesgos.`;
+
+    document.getElementById('ai-loading').style.display='flex';
+    document.getElementById('ai-result').innerHTML='';
+
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'x-api-key': key,
+          'anthropic-version':'2023-06-01',
+          'anthropic-dangerous-direct-browser-access':'true'
+        },
+        body: JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:1000,
+          messages:[{ role:'user', content: prompt }]
+        })
+      });
+      const json = await resp.json();
+      if (json.error) throw new Error(json.error.message);
+      const text = json.content?.[0]?.text || 'Sin respuesta.';
+      const resultDiv = document.getElementById('ai-result');
+      resultDiv.innerHTML = '';
+      const inner = document.createElement('div');
+      inner.className = 'text-gray-800 whitespace-pre-wrap leading-relaxed text-sm';
+      inner.textContent = text; // textContent: nunca ejecuta HTML
+      resultDiv.appendChild(inner);
+    } catch(e) {
+      const errDiv = document.getElementById('ai-result');
+      errDiv.innerHTML = '';
+      const p1 = document.createElement('p');
+      p1.className = 'text-red-600 text-sm font-medium';
+      p1.textContent = `Error: ${e.message}`; // textContent: no inyecta HTML
+      const p2 = document.createElement('p');
+      p2.className = 'text-xs text-gray-400 mt-1';
+      p2.textContent = 'Verifica tu API Key y que tengas conexión a api.anthropic.com';
+      errDiv.appendChild(p1); errDiv.appendChild(p2);
+    } finally {
+      document.getElementById('ai-loading').style.display='none';
+    }
+  }
+
+  // ── MODALS ───────────────────────────────────────────────────
+  function openModal(id) { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+  document.querySelectorAll('.overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+  });
+
+  // ── DATE HEADER ──────────────────────────────────────────────
+  function setDateHeader() {
+    document.getElementById('header-date').textContent =
+      new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  }
+
+  // ── INIT ─────────────────────────────────────────────────────
+  (function init() {
+    setDateHeader();
+    // Load saved API key
+    const savedKey = localStorage.getItem(AK);
+    if (savedKey) document.getElementById('ai-api-key').value = savedKey;
+    load();
+    render();
+  })();
+  </script>
+</body>
+</html>
